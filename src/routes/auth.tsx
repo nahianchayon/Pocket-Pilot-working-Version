@@ -14,7 +14,6 @@ import {
   Headphones,
   Music,
   AlertCircle,
-  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -23,12 +22,8 @@ import {
   signInWithGoogle,
   logout,
   subscribeToAuth,
-  isFirebaseConfigured,
   getFriendlyAuthErrorMessage,
   type FriendlyAuthError,
-  isLocalMode,
-  setLocalMode,
-  checkFirebaseHealth,
 } from "@/lib/firebase";
 
 export const Route = createFileRoute("/auth")({
@@ -49,27 +44,6 @@ function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [existingUserEmail, setExistingUserEmail] = useState<string | null>(null);
   const [authError, setAuthError] = useState<FriendlyAuthError | null>(null);
-  const [localModeActive, setLocalModeActive] = useState<boolean>(() => isLocalMode());
-  const [cloudStatus, setCloudStatus] = useState<
-    "checking" | "ready" | "needs_get_started" | "error"
-  >("checking");
-  const [checkingCloud, setCheckingCloud] = useState(false);
-
-  const refreshCloudStatus = async () => {
-    setCheckingCloud(true);
-    const health = await checkFirebaseHealth();
-    setCloudStatus(health.status);
-    setCheckingCloud(false);
-    if (health.status === "ready") {
-      toast.success("Firebase Cloud is active and ready!");
-    } else if (health.status === "needs_get_started") {
-      toast.info("Firebase needs 'Get started' clicked in the console.");
-    }
-  };
-
-  useEffect(() => {
-    checkFirebaseHealth().then((h) => setCloudStatus(h.status));
-  }, []);
 
   useEffect(() => {
     const unsub = subscribeToAuth((user) => {
@@ -92,37 +66,6 @@ function AuthPage() {
       await signInWithGoogle();
       toast.success("Welcome to PocketPilot!");
       navigate({ to: "/dashboard" });
-    } catch (err: any) {
-      const friendly = getFriendlyAuthErrorMessage(err);
-      setAuthError(friendly);
-      toast.error(friendly.title);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSwitchToLocalAndRetry = async () => {
-    setLocalMode(true);
-    setLocalModeActive(true);
-    setAuthError(null);
-    setLoading(true);
-
-    try {
-      if (mode === "signin") {
-        await signInWithEmail(email.trim(), password.trim());
-        toast.success("Welcome back to PocketPilot (Local Real-Data Mode)!");
-        navigate({ to: "/dashboard" });
-      } else {
-        const fullName = `${firstName.trim()} ${lastName.trim()}`.trim() || "Student Pilot";
-        await signUpWithEmail(
-          email.trim(),
-          password.trim(),
-          fullName,
-          university.trim() || undefined,
-        );
-        toast.success("Account created! (Local Real-Data Mode)");
-        navigate({ to: "/dashboard" });
-      }
     } catch (err: any) {
       const friendly = getFriendlyAuthErrorMessage(err);
       setAuthError(friendly);
@@ -257,79 +200,6 @@ function AuthPage() {
             </p>
           </div>
 
-          {/* Backend Mode Indicator & Switcher */}
-          <div className="mt-4 rounded-2xl border border-neutral-100 bg-neutral-50/90 p-2.5 text-xs shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 font-medium text-neutral-700">
-                <span
-                  className={`h-2.5 w-2.5 rounded-full ${
-                    localModeActive
-                      ? "bg-amber-500"
-                      : cloudStatus === "ready"
-                      ? "bg-emerald-500 animate-pulse"
-                      : "bg-rose-500"
-                  }`}
-                />
-                Mode:{" "}
-                <strong
-                  className={
-                    localModeActive
-                      ? "text-amber-800"
-                      : cloudStatus === "ready"
-                      ? "text-emerald-800"
-                      : "text-rose-800"
-                  }
-                >
-                  {localModeActive
-                    ? "Local Real Data"
-                    : cloudStatus === "ready"
-                    ? "Firebase Cloud (Active)"
-                    : "Firebase Cloud (Pending Setup)"}
-                </strong>
-              </span>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const next = !localModeActive;
-                  setLocalMode(next);
-                  setLocalModeActive(next);
-                  setAuthError(null);
-                  toast.info(next ? "Switched to Local Real Data" : "Switched to Firebase Cloud");
-                }}
-                className="rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-purple-700 shadow-sm border border-neutral-200 hover:bg-neutral-50 transition"
-              >
-                {localModeActive ? "Switch to Firebase Cloud" : "Switch to Local Mode"}
-              </button>
-            </div>
-
-            {!localModeActive && cloudStatus === "needs_get_started" && (
-              <div className="mt-2.5 pt-2 border-t border-neutral-200/60 flex items-center justify-between text-[11px]">
-                <span className="text-neutral-500">
-                  Firebase project needs <strong>Get started</strong> clicked.
-                </span>
-                <div className="flex items-center gap-2">
-                  <a
-                    href="https://console.firebase.google.com/project/pocket-pilot-fd207/authentication"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-bold text-purple-600 hover:underline inline-flex items-center gap-0.5"
-                  >
-                    Open Console ↗
-                  </a>
-                  <button
-                    type="button"
-                    onClick={refreshCloudStatus}
-                    disabled={checkingCloud}
-                    className="text-neutral-600 underline hover:text-neutral-900"
-                  >
-                    {checkingCloud ? "Checking..." : "Re-check"}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Active Session Notification if detected */}
           {existingUserEmail && (
             <div className="mt-4 rounded-2xl border border-purple-200 bg-purple-50/70 p-3 text-xs">
@@ -362,7 +232,7 @@ function AuthPage() {
             </div>
           )}
 
-          {/* Error Banner with Direct Solution & 1-Click Fallback */}
+          {/* Error Banner */}
           {authError && (
             <motion.div
               initial={{ opacity: 0, y: -6 }}
@@ -371,31 +241,9 @@ function AuthPage() {
             >
               <div className="flex items-start gap-2.5">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-                <div className="flex-1 space-y-1.5">
+                <div className="flex-1 space-y-1">
                   <div className="font-bold text-rose-900">{authError.title}</div>
                   <p className="leading-relaxed text-rose-800">{authError.message}</p>
-
-                  <div className="mt-3 flex flex-wrap items-center gap-2 pt-1">
-                    {authError.actionUrl && (
-                      <a
-                        href={authError.actionUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-3 py-1.5 font-semibold text-white shadow-sm hover:bg-rose-700 transition"
-                      >
-                        {authError.actionText || "Open Console ↗"}
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={handleSwitchToLocalAndRetry}
-                      className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-white px-3 py-1.5 font-semibold text-rose-800 shadow-sm hover:bg-rose-100/60 transition"
-                    >
-                      Continue in Local Mode →
-                    </button>
-                  </div>
                 </div>
               </div>
             </motion.div>
